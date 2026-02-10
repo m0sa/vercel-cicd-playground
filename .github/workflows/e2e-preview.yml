@@ -3,6 +3,8 @@ name: E2E Tests on Preview
 on:
   deployment_status:
 
+permissions:
+  contents: read
 jobs:
   debug-secrets:
     # Only run when Vercel preview deployment succeeds
