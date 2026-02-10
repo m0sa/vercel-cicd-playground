@@ -6,56 +6,8 @@ on:
 permissions:
   contents: read
 jobs:
-  debug-secrets:
-    # Only run when Vercel preview deployment succeeds
-    if: >
-      github.event.deployment_status.state == 'success' &&
-      contains(github.event.deployment_status.environment, 'Preview')
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Print deployment context (non-sensitive)
-        run: |
-          echo "Environment: ${{ github.event.deployment_status.environment }}"
-          echo "State: ${{ github.event.deployment_status.state }}"
-          echo "Repo: ${{ github.repository }}"
-          echo "SHA: ${{ github.event.deployment_status.sha }}"
-
-      - name: Check all required secrets and context
-        env:
-          DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}
-          SUPABASE_URL: ${{ secrets.PREVIEW_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.PREVIEW_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PREVIEW_SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          FAILED=0
-
-          check_var() {
-            local name="$1"
-            local value="$2"
-            if [ -z "$value" ]; then
-              echo "::error::$name is NOT set"
-              FAILED=1
-            else
-              echo "✓ $name is set (${#value} chars)"
-            fi
-          }
-
-          check_var "DEPLOYMENT_URL (target_url)" "$DEPLOYMENT_URL"
-          check_var "PREVIEW_SUPABASE_URL" "$SUPABASE_URL"
-          check_var "PREVIEW_SUPABASE_ANON_KEY" "$SUPABASE_ANON_KEY"
-          check_var "PREVIEW_SUPABASE_SERVICE_ROLE_KEY" "$SUPABASE_SERVICE_ROLE_KEY"
-
-          echo ""
-          if [ "$FAILED" -eq 1 ]; then
-            echo "::error::One or more required secrets/variables are missing"
-          else
-            echo "All checks passed."
-          fi
-
-          exit $FAILED
-
   e2e-tests:
+    timeout-minutes: 5
     if: >
       github.event.deployment_status.state == 'success' &&
       contains(github.event.deployment_status.environment, 'Preview')
@@ -82,6 +34,24 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+
+      - name: Wait for preview to be ready
+        env:
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}
+        run: |
+          echo "Waiting for $DEPLOYMENT_URL to be ready..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$DEPLOYMENT_URL" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Preview is ready (HTTP $STATUS) after ~${i}0s"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS - retrying in 10s..."
+            sleep 2
+          done
+          echo "::error::Preview URL did not return 200 after 5 minutes"
+          exit 1
+        working-directory: .
 
       - name: Run Playwright tests
         env:
