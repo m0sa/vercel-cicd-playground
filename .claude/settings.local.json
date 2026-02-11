@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"C:\\\\code\\\\vercel-cicd-playground\" log --oneline -10)"
+    ]
+  }
+}
